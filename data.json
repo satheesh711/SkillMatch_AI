@@ -1,0 +1,33 @@
+[
+  {
+    "basic_info": {
+      "Full Name": "Sira Satheesh",
+      "Email": "satheessira@gmail.com",
+      "Phone Number": "7569133430",
+      "Years of Experience": "8",
+      "Desired Position(s)": "python",
+      "Current Location": "hyderabad",
+      "Tech Stack": "python"
+    },
+    "technical_answers": [
+      {
+        "tech": "Python",
+        "question": "Explain the difference between `list` and `tuple` in Python, and provide examples where you would choose one over the other.",
+        "answer": "dfghj",
+        "feedback": "This response is not helpful. Please provide a valid Python solution addressing the problem's requirements."
+      },
+      {
+        "tech": "Python",
+        "question": "Describe how exception handling works in Python using `try`, `except`, `finally`, and `else` blocks.  Write a small code snippet demonstrating proper error handling for a file I/O operation.",
+        "answer": "kl",
+        "feedback": "\"This response is insufficient. Please provide code demonstrating your understanding of the problem and Python syntax.\""
+      },
+      {
+        "tech": "Python",
+        "question": "What are decorators in Python? Explain how they work with an example.  Discuss their use cases and potential downsides.",
+        "answer": "dfghjk",
+        "feedback": "This response is not relevant to a Python programming question.  Please attempt to answer the question using Python code."
+      }
+    ]
+  }
+]
