@@ -7,7 +7,6 @@ import re
 from dotenv import load_dotenv
 from pathlib import Path
 
-# === SETUP ===
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
@@ -22,7 +21,6 @@ def user_already_exists(email: str, phone_number: str) -> bool:
                 return True
     return False
 
-# === UTILITIES ===
 def generate_questions(tech_stack: str) -> List[Dict[str, str]]:
     prompt = f"""
 You are a technical interviewer. For each technology in the tech stack below, generate 3 relevant technical interview questions.
@@ -80,20 +78,17 @@ def save_to_json(candidate_data: Dict):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-# === FORM FIELDS ===
 form_fields = [
     "Full Name", "Email", "Phone Number", "Years of Experience",
     "Desired Position(s)", "Current Location", "Tech Stack"
 ]
 
-# === FIELD VALIDATIONS ===
 def is_valid_email(email: str) -> bool:
     return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
 
 def is_valid_phone(phone: str) -> bool:
-    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone))  # A basic phone number validation (international format)
+    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone))  
 
-# === MAIN APP ===
 def main():
     st.set_page_config(page_title="TalentScout", layout="centered")
     st.title("🤖 TalentScout - AI Hiring Assistant")
@@ -110,7 +105,6 @@ def main():
     total_steps = len(form_fields) + 2
     st.progress(min((step + 1) / total_steps, 1.0))
 
-    # === Step-by-step form ===
     if step < len(form_fields):
         current_field = form_fields[step]
         with st.form(key="basic_form"):
@@ -120,13 +114,10 @@ def main():
                 if not user_input.strip():
                     st.warning("Please enter a value.")
                 else:
-                    # Email Validation
                     if current_field == "Email" and not is_valid_email(user_input.strip()):
                         st.warning("Please enter a valid email address.")
-                    # Phone Number Validation
                     elif current_field == "Phone Number" and not is_valid_phone(user_input.strip()):
                         st.warning("Please enter a valid phone number.")
-                    # Duplicate Check for Email and Phone Number
                     elif current_field in ["Email", "Phone Number"]:
                         email = st.session_state.answers.get("Email", "")
                         phone = st.session_state.answers.get("Phone Number", "")
@@ -134,13 +125,11 @@ def main():
                             st.error("🚫 This email or phone number has already been used for screening.")
                             st.stop()
 
-                    # Temporarily save input
                     st.session_state.answers[current_field] = user_input.strip()
 
                     st.session_state.step += 1
                     st.rerun()
 
-    # === Generate questions ===
     elif step == len(form_fields):
         st.info("Generating questions based on your tech stack...")
         tech_stack = st.session_state.answers.get("Tech Stack", "")
@@ -151,7 +140,6 @@ def main():
         else:
             st.error("Tech Stack not found.")
 
-    # === Show questions one-by-one ===
     elif step == len(form_fields) + 1:
         questions = st.session_state.questions
         q_index = st.session_state.question_index
@@ -169,15 +157,13 @@ def main():
                     if not answer.strip():
                         st.warning("Answer is required.")
                     else:
-                        # Generate feedback but don't show it to the user
                         feedback = generate_feedback(answer.strip(), current_q['tech'])
 
-                        # Save answer and feedback for later
                         st.session_state.tech_answers.append({
                             "tech": current_q['tech'],
                             "question": current_q['question'],
                             "answer": answer.strip(),
-                            "feedback": feedback  # Save feedback internally
+                            "feedback": feedback   
                         })
                         st.session_state.feedbacks.append(feedback)
                         st.session_state.question_index += 1
@@ -186,7 +172,6 @@ def main():
             st.session_state.step += 1
             st.rerun()
 
-    # === Final Summary and Save to File ===
     else:
         st.success("🎉 Screening Complete!")
 
@@ -213,6 +198,5 @@ def main():
                 st.success("✅ Data submitted and saved! You can now close the app.")
                 st.stop()
 
-# === RUN ===
 if __name__ == "__main__":
     main()
