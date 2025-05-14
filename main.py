@@ -8,13 +8,37 @@ from dotenv import load_dotenv
 from pathlib import Path
 from pymongo import MongoClient
 
+# Load environment variables
 load_dotenv()
 
+# Configure Gemini API and MongoDB
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
 client = MongoClient(os.getenv("MONGO_URI"))
 db = client["talentScoutDB"]
 collection = db["candidates"]
+
+# Form field order
+form_fields = [
+    "Full Name", "Email", "Phone Number", "Years of Experience",
+    "Desired Position(s)", "Current Location", "Tech Stack"
+]
+
+# ======================= Validation Functions ========================
+def is_valid_name(name: str) -> bool:
+    return bool(re.match(r"^[A-Za-z ]{2,50}$", name.strip()))
+
+def is_valid_email(email: str) -> bool:
+    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email.strip()))
+
+def is_valid_phone(phone: str) -> bool:
+    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone.strip()))
+
+def is_valid_experience(exp: str) -> bool:
+    try:
+        val = float(exp)
+        return 0 <= val <= 50
+    except ValueError:
+        return False
 
 def user_already_exists(email: str, phone_number: str) -> bool:
     return collection.find_one({
@@ -24,6 +48,7 @@ def user_already_exists(email: str, phone_number: str) -> bool:
         ]
     }) is not None
 
+# ======================= Gemini AI Functions ========================
 def generate_questions(tech_stack: str) -> List[Dict[str, str]]:
     prompt = f"""
 You are a technical interviewer. For each technology in the tech stack below, generate 3 relevant technical interview questions.
@@ -47,7 +72,7 @@ Format response in JSON like:
             for q in qlist:
                 questions.append({"tech": tech, "question": q})
         return questions
-    except Exception as e:
+    except Exception:
         st.error("❌ Error parsing AI response.")
         return []
 
@@ -64,7 +89,7 @@ Provide feedback in a concise manner, no more than two lines.
 
     try:
         return response.text.strip()
-    except Exception as e:
+    except Exception:
         st.error("❌ Error generating feedback.")
         return "No feedback available."
 
@@ -86,20 +111,10 @@ def calculate_score(answers: List[Dict]) -> int:
 def save_to_mongo(candidate_data: Dict):
     collection.insert_one(candidate_data)
 
-form_fields = [
-    "Full Name", "Email", "Phone Number", "Years of Experience",
-    "Desired Position(s)", "Current Location", "Tech Stack"
-]
-
-def is_valid_email(email: str) -> bool:
-    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
-
-def is_valid_phone(phone: str) -> bool:
-    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone))
-
+# ======================= Main Streamlit App ========================
 def main():
-    st.set_page_config(page_title="TalentScout", layout="centered")
-    st.title("🤖 TalentScout - AI Hiring Assistant")
+    st.set_page_config(page_title="SkillMatch AI", layout="centered")
+    st.title("🧑‍💼 SkillMatch AI - Smart Hiring Assistant")
 
     if "step" not in st.session_state:
         st.session_state.step = 0
@@ -113,30 +128,46 @@ def main():
     total_steps = len(form_fields) + 2
     st.progress(min((step + 1) / total_steps, 1.0))
 
+    # ======================== Form Steps ========================
     if step < len(form_fields):
         current_field = form_fields[step]
         with st.form(key="basic_form"):
             user_input = st.text_input(f"{current_field}:")
             submitted = st.form_submit_button("Next")
+
             if submitted:
-                if not user_input.strip():
+                user_input = user_input.strip()
+                if not user_input:
                     st.warning("Please enter a value.")
                 else:
-                    if current_field == "Email" and not is_valid_email(user_input.strip()):
-                        st.warning("Please enter a valid email address.")
-                    elif current_field == "Phone Number" and not is_valid_phone(user_input.strip()):
-                        st.warning("Please enter a valid phone number.")
-                    elif current_field == "Phone Number":
-                        email = st.session_state.answers.get("Email", "")
-                        phone = user_input.strip()
-                        if user_already_exists(email, phone):
-                            st.error("🚫 This email or phone number has already been used for screening.")
+                    # Field-specific validation
+                    if current_field == "Full Name" and not is_valid_name(user_input):
+                        st.warning("Please enter a valid name.")
+                        return
+                    if current_field == "Email":
+                        if not is_valid_email(user_input):
+                            st.warning("Please enter a valid email address.")
+                            return
+                        elif user_already_exists(user_input, ""):
+                            st.error("🚫 This email has already been used.")
                             st.stop()
+                    if current_field == "Phone Number":
+                        if not is_valid_phone(user_input):
+                            st.warning("Please enter a valid phone number.")
+                            return
+                        email = st.session_state.answers.get("Email", "")
+                        if user_already_exists(email, user_input):
+                            st.error("🚫 This phone number is already used.")
+                            st.stop()
+                    if current_field == "Years of Experience" and not is_valid_experience(user_input):
+                        st.warning("Please enter a valid experience (0–50 years).")
+                        return
 
-                    st.session_state.answers[current_field] = user_input.strip()
+                    st.session_state.answers[current_field] = user_input
                     st.session_state.step += 1
                     st.rerun()
 
+    # ======================== Question Generation ========================
     elif step == len(form_fields):
         st.info("Generating questions based on your tech stack...")
         tech_stack = st.session_state.answers.get("Tech Stack", "")
@@ -147,6 +178,7 @@ def main():
         else:
             st.error("Tech Stack not found.")
 
+    # ======================== Answering Questions ========================
     elif step == len(form_fields) + 1:
         questions = st.session_state.questions
         q_index = st.session_state.question_index
@@ -179,6 +211,7 @@ def main():
             st.session_state.step += 1
             st.rerun()
 
+    # ======================== Final Screen ========================
     else:
         st.success("🎉 Screening Complete!")
 
@@ -186,7 +219,7 @@ def main():
         for k, v in st.session_state.answers.items():
             st.write(f"**{k}:** {v}")
 
-        st.markdown("### 🧠 Technical Responses and Final Feedback:")
+        st.markdown("### 🧠 Technical Responses and Feedback:")
         for item in st.session_state.tech_answers:
             st.markdown(f"**🔹 {item['tech']}**")
             st.markdown(f"- **Q:** {item['question']}")
@@ -200,7 +233,7 @@ def main():
             email = st.session_state.answers.get("Email", "")
             phone = st.session_state.answers.get("Phone Number", "")
             if user_already_exists(email, phone):
-                st.warning("🚫 This user has already submitted their responses. Duplicate entries are not allowed.")
+                st.warning("🚫 This user has already submitted their responses.")
             else:
                 candidate_data = {
                     "basic_info": st.session_state.answers,
@@ -208,8 +241,9 @@ def main():
                     "score_percent": overall_score
                 }
                 save_to_mongo(candidate_data)
-                st.success("✅ Data submitted and saved to MongoDB! You can now close the app.")
+                st.success("✅ Data submitted and saved! You can now close the app.")
                 st.stop()
 
+# Run the app
 if __name__ == "__main__":
     main()
