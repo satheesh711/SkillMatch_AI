@@ -3,4 +3,4 @@ google-generativeai
 python-dotenv
 pandas
 numpy
-MongoClient
+pymongo
