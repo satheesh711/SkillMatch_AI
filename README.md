@@ -20,7 +20,7 @@ streamlit run main.py
 ## Sample Tech Stack Inputs
 
 ```
-Python, Django, React
+Python, streamlit , llm
 ```
 
 ---
