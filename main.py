@@ -6,20 +6,23 @@ import json
 import re
 from dotenv import load_dotenv
 from pathlib import Path
+from pymongo import MongoClient
 
 load_dotenv()
+
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-DATA_FILE = "data.json"
+client = MongoClient(os.getenv("MONGO_URI"))
+db = client["talentScoutDB"]
+collection = db["candidates"]
 
 def user_already_exists(email: str, phone_number: str) -> bool:
-    if Path(DATA_FILE).exists():
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for record in data:
-            if record["basic_info"].get("Email", "").lower() == email.lower() or record["basic_info"].get("Phone Number", "") == phone_number:
-                return True
-    return False
+    return collection.find_one({
+        "$or": [
+            {"basic_info.Email": {"$regex": f"^{email}$", "$options": "i"}},
+            {"basic_info.Phone Number": phone_number}
+        ]
+    }) is not None
 
 def generate_questions(tech_stack: str) -> List[Dict[str, str]]:
     prompt = f"""
@@ -50,13 +53,12 @@ Format response in JSON like:
 
 def generate_feedback(answer: str, tech: str) -> str:
     prompt = f"""
-    You are a technical interviewer. Based on the answer below for the {tech} question, generate a short and minimal constructive feedback.
+You are a technical interviewer. Based on the answer below for the {tech} question, generate a short and minimal constructive feedback.
 
-    Answer: {answer}
+Answer: {answer}
 
-    Provide feedback in a concise manner, no more than two lines.
-    """
-
+Provide feedback in a concise manner, no more than two lines.
+"""
     model = genai.GenerativeModel(model_name='gemini-1.5-flash')
     response = model.generate_content(prompt)
 
@@ -66,17 +68,23 @@ def generate_feedback(answer: str, tech: str) -> str:
         st.error("❌ Error generating feedback.")
         return "No feedback available."
 
-def save_to_json(candidate_data: Dict):
-    if Path(DATA_FILE).exists():
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    else:
-        data = []
+def calculate_score(answers: List[Dict]) -> int:
+    score = 0
+    for item in answers:
+        answer_len = len(item["answer"].strip())
+        if answer_len > 100:
+            score += 3
+        elif answer_len > 50:
+            score += 2
+        elif answer_len > 20:
+            score += 1
 
-    data.append(candidate_data)
+    total_possible = len(answers) * 3
+    percentage = round((score / total_possible) * 100) if total_possible else 0
+    return percentage
 
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+def save_to_mongo(candidate_data: Dict):
+    collection.insert_one(candidate_data)
 
 form_fields = [
     "Full Name", "Email", "Phone Number", "Years of Experience",
@@ -87,7 +95,7 @@ def is_valid_email(email: str) -> bool:
     return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
 
 def is_valid_phone(phone: str) -> bool:
-    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone))  
+    return bool(re.match(r"^\+?[1-9]\d{1,14}$", phone))
 
 def main():
     st.set_page_config(page_title="TalentScout", layout="centered")
@@ -118,15 +126,14 @@ def main():
                         st.warning("Please enter a valid email address.")
                     elif current_field == "Phone Number" and not is_valid_phone(user_input.strip()):
                         st.warning("Please enter a valid phone number.")
-                    elif current_field in ["Email", "Phone Number"]:
+                    elif current_field == "Phone Number":
                         email = st.session_state.answers.get("Email", "")
-                        phone = st.session_state.answers.get("Phone Number", "")
+                        phone = user_input.strip()
                         if user_already_exists(email, phone):
                             st.error("🚫 This email or phone number has already been used for screening.")
                             st.stop()
 
                     st.session_state.answers[current_field] = user_input.strip()
-
                     st.session_state.step += 1
                     st.rerun()
 
@@ -163,7 +170,7 @@ def main():
                             "tech": current_q['tech'],
                             "question": current_q['question'],
                             "answer": answer.strip(),
-                            "feedback": feedback   
+                            "feedback": feedback
                         })
                         st.session_state.feedbacks.append(feedback)
                         st.session_state.question_index += 1
@@ -184,18 +191,24 @@ def main():
             st.markdown(f"**🔹 {item['tech']}**")
             st.markdown(f"- **Q:** {item['question']}")
             st.markdown(f"- **A:** {item['answer']}")
+            st.markdown(f"- **💬 Feedback:** {item['feedback']}")
+
+        overall_score = calculate_score(st.session_state.tech_answers)
+        st.markdown(f"### 📈 Overall Technical Score: **{overall_score}%**")
 
         if st.button("Submit Final & Exit"):
             email = st.session_state.answers.get("Email", "")
-            if user_already_exists(email, ""):
+            phone = st.session_state.answers.get("Phone Number", "")
+            if user_already_exists(email, phone):
                 st.warning("🚫 This user has already submitted their responses. Duplicate entries are not allowed.")
             else:
                 candidate_data = {
                     "basic_info": st.session_state.answers,
-                    "technical_answers": st.session_state.tech_answers
+                    "technical_answers": st.session_state.tech_answers,
+                    "score_percent": overall_score
                 }
-                save_to_json(candidate_data)
-                st.success("✅ Data submitted and saved! You can now close the app.")
+                save_to_mongo(candidate_data)
+                st.success("✅ Data submitted and saved to MongoDB! You can now close the app.")
                 st.stop()
 
 if __name__ == "__main__":
